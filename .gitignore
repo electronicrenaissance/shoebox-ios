@@ -1,0 +1,35 @@
+# Xcode / macOS
+.DS_Store
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+build/
+DerivedData/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# XcodeGen output — the project file is generated from project.yml.
+# Generate locally with `xcodegen generate`. Commit it instead if your team
+# prefers checking in the project (then delete this line).
+Shoebox.xcodeproj/
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Packages/
+Package.resolved
+
+# Fastlane / CI
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+
+# Secrets — never commit signing or API config
+*.mobileprovision
+*.p12
+Secrets.xcconfig

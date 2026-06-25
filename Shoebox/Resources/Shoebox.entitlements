@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Receipts are stored in the user's private CloudKit database — tied to
+	     their iCloud account, so no app-level sign-up is required and data is
+	     private to them. -->
+	<key>com.apple.developer.icloud-services</key>
+	<array>
+		<string>CloudKit</string>
+	</array>
+	<key>com.apple.developer.icloud-container-identifiers</key>
+	<array>
+		<string>iCloud.com.vivtechnologies.shoebox</string>
+	</array>
+
+	<!-- CloudKit silent push for cross-device sync. -->
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>
