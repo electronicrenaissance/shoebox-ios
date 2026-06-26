@@ -158,7 +158,7 @@ struct ReceiptDetailView: View {
     private var verdictHeadline: String {
         switch receipt.status {
         case .processing: "Reading on device…"
-        case .acceptable: receipt.acceptabilityOverride ? "Marked CRA-ready by you" : "Looks CRA-ready"
+        case .acceptable: "Looks CRA-ready"
         case .needsAttention: "Needs attention before you claim it"
         case .notATaxReceipt: "This doesn’t look like a tax receipt"
         case .failed: "Couldn’t read this one"
