@@ -67,7 +67,7 @@ struct MockReceiptReader: ReceiptReader {
             providerName: nil,
             verdict: .acceptable,
             reasons: [],
-            lines: [.init(code: "33099", confidence: "medium")]
+            lines: [.init(code: "33099", confidence: "high")]
         )
     }
 }

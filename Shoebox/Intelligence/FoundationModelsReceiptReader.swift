@@ -93,8 +93,10 @@ struct FoundationModelsReceiptReader: ReceiptReader {
            needsAttention when a specific required element is missing — then name exactly what is missing.
 
         3. MATCH only the line(s) that clearly apply, each with a confidence of high, medium, or low.
-           Do NOT add a line that does not fit the document (for example, never tag a donation receipt
-           as child care).
+           Use HIGH confidence only when the receipt clearly meets that line's required elements;
+           otherwise use medium or low. Returning no line is fine — do NOT force a match, and never
+           add a line that does not fit the document (for example, never tag a donation receipt as
+           child care).
 
         Do NOT compute deductible or creditable amounts, apply thresholds, or total a claim.
 

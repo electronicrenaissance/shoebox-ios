@@ -30,20 +30,37 @@ struct ReceiptReadingTests {
         }
     }
 
-    @Test("Unknown line codes fall back to .other and duplicates are removed")
-    func lineMappingIsSafe() {
-        let reading = ReceiptReading(
-            vendor: nil, date: "2026-06-14", total: nil, currency: nil, taxAmount: nil,
+    @Test("Only high-confidence, known, real lines are kept; medium/low/unknown/dupes are dropped")
+    func keepsOnlyHighConfidence() {
+        let reading = makeReading(lines: [
+            ("33099", "high"),
+            ("34900", "medium"),    // dropped: not high confidence
+            ("99999", "high"),      // dropped: unknown code
+            ("33099", "high"),      // dropped: duplicate
+        ])
+        #expect(reading.matchedLines.map(\.code) == [.medical])
+    }
+
+    @Test("Falls back to Other only when no high-confidence line qualifies")
+    func fallsBackToOther() {
+        let reading = makeReading(lines: [("34900", "medium"), ("21400", "low")])
+        #expect(reading.matchedLines.map(\.code) == [.other])
+    }
+
+    @Test("A model-returned 'other' is the fallback, never a real selection")
+    func otherIsNeverAReadSelection() {
+        let reading = makeReading(lines: [("other", "high")])
+        #expect(reading.matchedLines.map(\.code) == [.other])
+    }
+
+    /// Build a reading with only line matches set (other fields nil).
+    private func makeReading(lines: [(String, String)]) -> ReceiptReading {
+        ReceiptReading(
+            vendor: nil, date: nil, total: nil, currency: nil, taxAmount: nil,
             details: nil, charityRegistration: nil, providerName: nil,
             verdict: .acceptable, reasons: [],
-            lines: [
-                .init(code: "33099", confidence: "high"),
-                .init(code: "33099", confidence: "low"),   // duplicate
-                .init(code: "99999", confidence: "medium"), // unknown → other
-            ]
+            lines: lines.map { .init(code: $0.0, confidence: $0.1) }
         )
-        #expect(reading.matchedLines.map(\.code) == [.medical, .other])
-        #expect(reading.matchedLines.first?.confidence == .high)
     }
 
     @Test("ISO date strings parse into a Date")

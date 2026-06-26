@@ -80,15 +80,21 @@ extension ReceiptReading {
         return Self.isoDateFormatter.date(from: date)
     }
 
-    /// Validated, de-duplicated line matches (unknown codes fall back to `.other`).
+    /// The lines to auto-categorize this receipt under. We keep **only matches the
+    /// model is highly confident about** — a real line (not `other`), known code,
+    /// high confidence, de-duplicated. If nothing qualifies, we fall back to a
+    /// single `Other / Uncategorized` entry so every receipt still files somewhere.
     var matchedLines: [TaxLineMatch] {
         var seen = Set<TaxLineCode>()
-        return lines.compactMap { raw in
-            let code = TaxLineCode(rawValue: raw.code) ?? .other
-            guard seen.insert(code).inserted else { return nil }
-            let confidence = Confidence(rawValue: raw.confidence.lowercased()) ?? .low
-            return TaxLineMatch(code: code, confidence: confidence)
+        let confident = lines.compactMap { raw -> TaxLineMatch? in
+            guard
+                let code = TaxLineCode(rawValue: raw.code), code != .other,
+                Confidence(rawValue: raw.confidence.lowercased()) == .high,
+                seen.insert(code).inserted
+            else { return nil }
+            return TaxLineMatch(code: code, confidence: .high)
         }
+        return confident.isEmpty ? [TaxLineMatch(code: .other, confidence: .high)] : confident
     }
 
     /// A stable JSON snapshot for the immutable AI baseline (PRD FR-AI5).

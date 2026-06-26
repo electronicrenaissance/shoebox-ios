@@ -27,22 +27,17 @@ struct ReceiptDetailView: View {
             verdictSection
 
             if !receipt.matchedLines.isEmpty {
-                Section("Might Apply To") {
+                Section("Tax Lines") {
                     ForEach(receipt.matchedLines, id: \.code) { match in
-                        LabeledContent {
-                            Text(match.confidence.rawValue.capitalized)
-                                .foregroundStyle(.secondary)
-                        } label: {
-                            Label {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(match.meta.category)
-                                    Text(match.code.lineSubtitle)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            } icon: {
-                                Image(systemName: match.code.systemImage).foregroundStyle(.tint)
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(match.meta.category)
+                                Text(match.code.lineSubtitle)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
                             }
+                        } icon: {
+                            Image(systemName: match.code.systemImage).foregroundStyle(.tint)
                         }
                     }
                 }
