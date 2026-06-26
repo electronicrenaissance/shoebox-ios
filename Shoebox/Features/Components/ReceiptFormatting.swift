@@ -2,6 +2,11 @@ import Foundation
 
 /// Display formatting shared across the receipt screens.
 extension Receipt {
+    /// Calendar year of the receipt's date (falls back to when it was added).
+    var year: Int {
+        Calendar.current.component(.year, from: date ?? createdAt)
+    }
+
     var vendorDisplay: String {
         switch status {
         case .processing: "Reading receipt…"

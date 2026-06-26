@@ -6,12 +6,14 @@ enum ReceiptFilter: Hashable {
     case all
     case needsAttention
     case line(TaxLineCode)
+    case year(Int)
 
     var title: String {
         switch self {
         case .all: "All Receipts"
         case .needsAttention: "Needs Attention"
         case .line(let code): code.category
+        case .year(let year): String(year)
         }
     }
 
@@ -20,6 +22,7 @@ enum ReceiptFilter: Hashable {
         case .all: "tray.full.fill"
         case .needsAttention: "exclamationmark.triangle.fill"
         case .line(let code): code.systemImage
+        case .year: "calendar"
         }
     }
 
@@ -31,6 +34,8 @@ enum ReceiptFilter: Hashable {
             return receipt.status.needsReview
         case .line(let code):
             return receipt.matchedLines.contains { $0.code == code }
+        case .year(let year):
+            return receipt.year == year
         }
     }
 }

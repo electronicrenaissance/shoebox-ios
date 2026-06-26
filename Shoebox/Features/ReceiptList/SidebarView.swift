@@ -16,6 +16,14 @@ struct SidebarView: View {
                 row(.needsAttention, count: receipts.count { $0.status.needsReview })
             }
 
+            if !yearsPresent.isEmpty {
+                Section("Year") {
+                    ForEach(yearsPresent, id: \.self) { year in
+                        row(.year(year), count: receipts.count { $0.year == year })
+                    }
+                }
+            }
+
             if !linesPresent.isEmpty {
                 Section("Tax Lines") {
                     ForEach(linesPresent, id: \.self) { code in
@@ -31,6 +39,11 @@ struct SidebarView: View {
         Label(filter.title, systemImage: filter.systemImage)
             .badge(count)
             .tag(filter)
+    }
+
+    /// Years that have at least one receipt, newest first.
+    private var yearsPresent: [Int] {
+        Set(receipts.map(\.year)).sorted(by: >)
     }
 
     /// Tax lines that currently have at least one matched receipt, in taxonomy order.
