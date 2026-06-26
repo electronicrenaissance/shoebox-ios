@@ -66,6 +66,15 @@ struct ReceiptReadingTests {
         #expect((" Hope Mission " as String?).sanitized == "Hope Mission")
     }
 
+    @Test("A receipt always has a date; a read without one keeps the existing date")
+    func dateIsAlwaysPresent() {
+        let receipt = Receipt(fileName: "x.jpg", mimeType: "image/jpeg", imageData: nil)
+        #expect(receipt.date != nil)
+        let original = receipt.date
+        receipt.apply(makeReading(lines: []))  // reading carries no date
+        #expect(receipt.date == original)
+    }
+
     /// Build a reading with only line matches set (other fields nil).
     private func makeReading(lines: [(String, String)]) -> ReceiptReading {
         ReceiptReading(

@@ -10,22 +10,12 @@ struct ReceiptEditView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
 
-    @State private var hasDate: Bool
-
-    init(receipt: Receipt) {
-        self.receipt = receipt
-        _hasDate = State(initialValue: receipt.date != nil)
-    }
-
     var body: some View {
         NavigationStack {
             Form {
                 Section("Details") {
                     TextField("Payee", text: optionalText(\.vendor))
-                    Toggle("Has a date", isOn: $hasDate.animation())
-                    if hasDate {
-                        DatePicker("Date", selection: dateBinding, displayedComponents: .date)
-                    }
+                    DatePicker("Date", selection: dateBinding, displayedComponents: .date)
                     LabeledContent("Total") {
                         TextField("Amount", value: $receipt.total, format: .number)
                             .multilineTextAlignment(.trailing)
@@ -96,7 +86,8 @@ struct ReceiptEditView: View {
     // MARK: Save
 
     private func save() {
-        if !hasDate { receipt.date = nil }
+        // Date is required; guard against any legacy receipt that lacks one.
+        if receipt.date == nil { receipt.date = .now }
         receipt.updatedAt = .now
         try? modelContext.save()
         dismiss()

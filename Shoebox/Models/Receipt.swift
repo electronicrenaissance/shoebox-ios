@@ -72,13 +72,17 @@ final class Receipt {
         self.fileName = fileName
         self.mimeType = mimeType
         self.imageData = imageData
+        // Date is required; default to the capture day until the model extracts one.
+        self.date = .now
     }
 
     /// Apply the on-device reader's result, stamping `updatedAt` and recording the
     /// immutable AI baseline the first time.
     func apply(_ result: ReceiptReading) {
         vendor = result.vendor.sanitized
-        date = result.parsedDate
+        // Keep the existing date (capture day or a user edit) if the model didn't
+        // read one — a receipt always has a date.
+        if let parsed = result.parsedDate { date = parsed }
         total = result.total
         currency = result.currency.sanitized ?? "CAD"
         taxAmount = result.taxAmount
