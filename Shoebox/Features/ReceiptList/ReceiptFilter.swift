@@ -64,15 +64,26 @@ enum ReceiptSort: String, CaseIterable, Identifiable {
     }
 
     func apply(_ receipts: [Receipt]) -> [Receipt] {
+        receipts.sorted { lhs, rhs in
+            // Still-processing receipts (which carry a placeholder "now" date) sink
+            // below finished ones, so completed receipts fill the top of the list.
+            if (lhs.status == .processing) != (rhs.status == .processing) {
+                return lhs.status != .processing
+            }
+            return ordered(lhs, rhs)
+        }
+    }
+
+    private func ordered(_ lhs: Receipt, _ rhs: Receipt) -> Bool {
         switch self {
         case .dateNewest:
-            receipts.sorted { ($0.date ?? $0.createdAt) > ($1.date ?? $1.createdAt) }
+            (lhs.date ?? lhs.createdAt) > (rhs.date ?? rhs.createdAt)
         case .dateOldest:
-            receipts.sorted { ($0.date ?? $0.createdAt) < ($1.date ?? $1.createdAt) }
+            (lhs.date ?? lhs.createdAt) < (rhs.date ?? rhs.createdAt)
         case .amountHigh:
-            receipts.sorted { ($0.total ?? 0) > ($1.total ?? 0) }
+            (lhs.total ?? 0) > (rhs.total ?? 0)
         case .vendor:
-            receipts.sorted { ($0.vendor ?? "").localizedCaseInsensitiveCompare($1.vendor ?? "") == .orderedAscending }
+            (lhs.vendor ?? "").localizedCaseInsensitiveCompare(rhs.vendor ?? "") == .orderedAscending
         }
     }
 }

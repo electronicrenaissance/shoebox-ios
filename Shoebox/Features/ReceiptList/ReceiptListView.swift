@@ -23,7 +23,7 @@ struct ReceiptListView: View {
     @State private var isScanning = false
     @State private var isPickingPhoto = false
     @State private var isImportingPDF = false
-    @State private var photoItem: PhotosPickerItem?
+    @State private var photoItems: [PhotosPickerItem] = []
 
     // Export (Mac uses a Save panel; iPhone/iPad use a Share sheet)
     #if targetEnvironment(macCatalyst)
@@ -65,14 +65,18 @@ struct ReceiptListView: View {
             DocumentScannerView(
                 onScan: { data in
                     isScanning = false
-                    ingest(data: data, mimeType: "image/jpeg", fileName: "scan-\(stamp).jpg")
+                    selection = ingest(data: data, mimeType: "image/jpeg", fileName: "scan-\(stamp).jpg")
                 },
                 onCancel: { isScanning = false }
             )
             .ignoresSafeArea()
         }
-        .photosPicker(isPresented: $isPickingPhoto, selection: $photoItem, matching: .images)
-        .fileImporter(isPresented: $isImportingPDF, allowedContentTypes: [.pdf]) { result in
+        .photosPicker(isPresented: $isPickingPhoto, selection: $photoItems, matching: .images)
+        .fileImporter(
+            isPresented: $isImportingPDF,
+            allowedContentTypes: [.pdf],
+            allowsMultipleSelection: true
+        ) { result in
             handlePDFImport(result)
         }
         #if targetEnvironment(macCatalyst)
@@ -87,9 +91,11 @@ struct ReceiptListView: View {
             isExporting = true
         })
         #endif
-        .onChange(of: photoItem) { _, item in
-            guard let item else { return }
-            Task { await handlePhotoPick(item) }
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            let pending = items
+            photoItems = []
+            Task { await handlePhotoPicks(pending) }
         }
     }
 
@@ -114,8 +120,8 @@ struct ReceiptListView: View {
                 if VNDocumentCameraViewController.isSupported {
                     Button("Scan Document", systemImage: "doc.viewfinder") { isScanning = true }
                 }
-                Button("Choose Photo", systemImage: "photo.on.rectangle") { isPickingPhoto = true }
-                Button("Import PDF", systemImage: "doc.badge.plus") { isImportingPDF = true }
+                Button("Choose Photos", systemImage: "photo.on.rectangle") { isPickingPhoto = true }
+                Button("Import PDFs", systemImage: "doc.badge.plus") { isImportingPDF = true }
             } label: {
                 Label("Add Receipt", systemImage: "plus")
             }
@@ -191,28 +197,46 @@ struct ReceiptListView: View {
         try? modelContext.save()
     }
 
-    private func ingest(data: Data, mimeType: String, fileName: String) {
+    /// Persist one capture and return the new receipt (for selection).
+    @discardableResult
+    private func ingest(data: Data, mimeType: String, fileName: String) -> Receipt? {
         let id = processor.ingest(
             ReceiptInput(data: data, mimeType: mimeType, fileName: fileName),
             into: modelContext
         )
-        // Auto-open the new receipt so the user watches it read in.
-        selection = modelContext.model(for: id) as? Receipt
+        return modelContext.model(for: id) as? Receipt
     }
 
-    private func handlePhotoPick(_ item: PhotosPickerItem) async {
-        defer { photoItem = nil }
-        guard let data = try? await item.loadTransferable(type: Data.self) else { return }
-        let normalized = UIImage(data: data)?.jpegData(compressionQuality: 0.85) ?? data
-        ingest(data: normalized, mimeType: "image/jpeg", fileName: "photo-\(stamp).jpg")
+    private func handlePhotoPicks(_ items: [PhotosPickerItem]) async {
+        // Load everything first, then ingest as one batch so the queue reads them
+        // in list order (top-down).
+        var datas: [Data] = []
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
+            datas.append(UIImage(data: data)?.jpegData(compressionQuality: 0.85) ?? data)
+        }
+        var ingested: [Receipt] = []
+        for (index, data) in datas.enumerated() {
+            if let receipt = ingest(data: data, mimeType: "image/jpeg", fileName: "photo-\(stamp)-\(index + 1).jpg") {
+                ingested.append(receipt)
+            }
+        }
+        // Auto-open only a single import; a batch stays on the list to watch it fill.
+        if ingested.count == 1 { selection = ingested.first }
     }
 
-    private func handlePDFImport(_ result: Result<URL, Error>) {
-        guard case .success(let url) = result else { return }
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        guard let data = try? Data(contentsOf: url) else { return }
-        ingest(data: data, mimeType: "application/pdf", fileName: url.lastPathComponent)
+    private func handlePDFImport(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result else { return }
+        var ingested: [Receipt] = []
+        for url in urls {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url) else { continue }
+            if let receipt = ingest(data: data, mimeType: "application/pdf", fileName: url.lastPathComponent) {
+                ingested.append(receipt)
+            }
+        }
+        if ingested.count == 1 { selection = ingested.first }
     }
 
     private var stamp: String {
