@@ -33,7 +33,11 @@ struct ReceiptEditView: View {
                             .keyboardType(.decimalPad)
                             #endif
                     }
-                    TextField("Currency", text: $receipt.currency)
+                    Picker("Currency", selection: $receipt.currency) {
+                        ForEach(CurrencyOption.options(including: receipt.currency)) { option in
+                            Text(option.label).tag(option.code)
+                        }
+                    }
                     LabeledContent("GST/HST") {
                         TextField("Tax", value: $receipt.taxAmount, format: .number)
                             .multilineTextAlignment(.trailing)
