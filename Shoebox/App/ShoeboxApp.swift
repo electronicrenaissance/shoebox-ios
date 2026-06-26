@@ -17,9 +17,8 @@ struct ShoeboxApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ReceiptListView()
+            RootView()
                 .environment(processor)
-                .tint(Theme.brand)
         }
         .modelContainer(modelContainer)
     }

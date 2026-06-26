@@ -1,247 +1,200 @@
 import SwiftUI
 import SwiftData
 
-/// Receipt detail: the captured image, the CRA validation result, matched
-/// line(s), and extracted details, plus edit / retry / delete actions.
+/// Receipt detail, built as a grouped `Form` so it reads natively on iPhone,
+/// iPad, and Mac: a tappable image, the CRA verdict callout, matched line(s),
+/// extracted details, and destructive/maintenance actions.
 struct ReceiptDetailView: View {
     @Bindable var receipt: Receipt
 
     @Environment(\.modelContext) private var modelContext
     @Environment(ReceiptProcessor.self) private var processor
-    @Environment(\.dismiss) private var dismiss
 
     @State private var showingEdit = false
+    @State private var showingImage = false
     @State private var confirmingDelete = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                imagePreview
-
-                if receipt.status == .processing {
-                    processingCard
-                } else {
-                    validationCard
-                    if !receipt.matchedLines.isEmpty { matchedLinesSection }
-                    detailsSection
+        Form {
+            if receipt.imageData != nil {
+                Section {
+                    imagePreview
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
                 }
             }
-            .padding(16)
-        }
-        .background(Theme.paper)
-        .navigationTitle("Receipt")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("Edit details", systemImage: "pencil") { showingEdit = true }
-                    if receipt.imageData != nil {
-                        Button("Read again", systemImage: "arrow.clockwise") {
-                            processor.reprocess(receipt, in: modelContext)
+
+            verdictSection
+
+            if !receipt.matchedLines.isEmpty {
+                Section("Might Apply To") {
+                    ForEach(receipt.matchedLines, id: \.code) { match in
+                        LabeledContent {
+                            Text(match.confidence.rawValue.capitalized)
+                                .foregroundStyle(.secondary)
+                        } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(match.meta.category)
+                                    Text(match.code.lineSubtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            } icon: {
+                                Image(systemName: match.code.systemImage).foregroundStyle(.tint)
+                            }
                         }
                     }
-                    Button("Delete", systemImage: "trash", role: .destructive) {
-                        confirmingDelete = true
-                    }
-                } label: {
-                    Image(systemName: "ellipsis.circle")
                 }
+            }
+
+            detailsSection
+
+            Section {
+                if receipt.imageData != nil {
+                    Button("Read Again", systemImage: "arrow.clockwise") {
+                        processor.reprocess(receipt, in: modelContext)
+                    }
+                }
+                Button("Delete Receipt", systemImage: "trash", role: .destructive) {
+                    confirmingDelete = true
+                }
+            }
+        }
+        .formStyle(.grouped)
+        .navigationTitle(receipt.vendor ?? "Receipt")
+        #if !targetEnvironment(macCatalyst)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button("Edit") { showingEdit = true }
             }
         }
         .sheet(isPresented: $showingEdit) {
             ReceiptEditView(receipt: receipt)
         }
+        .sheet(isPresented: $showingImage) {
+            if let data = receipt.imageData, let image = UIImage(data: data) {
+                ImageViewer(image: image)
+            }
+        }
         .confirmationDialog("Delete this receipt?", isPresented: $confirmingDelete, titleVisibility: .visible) {
-            Button("Delete", role: .destructive, action: delete)
-            Button("Cancel", role: .cancel) {}
+            Button("Delete Receipt", role: .destructive, action: delete)
         } message: {
-            Text("This removes the receipt and its image from your shoebox. This can't be undone.")
+            Text("This removes the receipt and its image from your shoebox. This can’t be undone.")
         }
     }
 
     // MARK: Sections
 
-    @ViewBuilder
     private var imagePreview: some View {
-        if let data = receipt.imageData, let image = UIImage(data: data) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFit()
-                .frame(maxHeight: 320)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.cornerRadius))
-                .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius).strokeBorder(Theme.line))
-        } else {
-            RoundedRectangle(cornerRadius: Theme.cornerRadius)
-                .fill(Color.white)
-                .frame(height: 200)
-                .overlay(Image(systemName: "doc.text").font(.largeTitle).foregroundStyle(Theme.muted))
-                .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius).strokeBorder(Theme.line))
+        Button {
+            showingImage = true
+        } label: {
+            if let data = receipt.imageData, let image = UIImage(data: data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
+                    .frame(maxHeight: 320)
+                    .background(Color(.secondarySystemBackground))
+            }
         }
-    }
-
-    private var processingCard: some View {
-        HStack(spacing: 10) {
-            ProgressView()
-            Text("Reading this receipt on your device…")
-                .font(.subheadline)
-                .foregroundStyle(Theme.muted)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .card()
+        .buttonStyle(.plain)
+        .accessibilityLabel("View receipt image")
     }
 
     @ViewBuilder
-    private var validationCard: some View {
-        switch receipt.status {
-        case .acceptable:
-            ValidationCard(
-                tone: .ok,
-                icon: "checkmark.circle.fill",
-                title: receipt.acceptabilityOverride ? "Marked CRA-ready by you" : "Looks CRA-ready",
-                reasons: []
-            )
-        case .needsAttention:
-            ValidationCard(
-                tone: .warn,
-                icon: "exclamationmark.triangle.fill",
-                title: "Needs attention before you claim it",
-                reasons: receipt.validationReasons
-            )
-        case .notATaxReceipt:
-            ValidationCard(
-                tone: .fail,
-                icon: "xmark.circle",
-                title: "This doesn't look like a tax receipt",
-                reasons: receipt.validationReasons
-            )
-        case .failed:
-            ValidationCard(
-                tone: .fail,
-                icon: "exclamationmark.triangle.fill",
-                title: "Couldn't read this one",
-                reasons: ["The photo may be too blurry. Edit the details by hand, or read it again."]
-            )
-        case .processing:
-            EmptyView()
-        }
-    }
-
-    private var matchedLinesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionLabel("Might apply to")
-            ForEach(receipt.matchedLines, id: \.code) { match in
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(match.meta.category).font(.subheadline.weight(.medium)).foregroundStyle(Theme.ink)
-                        if let line = match.meta.line {
-                            let form = match.meta.form.map { " · \($0)" } ?? ""
-                            Text("Line \(line)\(form)").font(.caption).foregroundStyle(Theme.muted)
-                        }
+    private var verdictSection: some View {
+        Section {
+            HStack(alignment: .top, spacing: 12) {
+                Group {
+                    if receipt.status == .processing {
+                        ProgressView()
+                    } else {
+                        Image(systemName: receipt.status.systemImage)
+                            .font(.title2)
+                            .foregroundStyle(receipt.status.tint)
                     }
-                    Spacer()
-                    Badge(tone: .muted, text: "\(match.confidence.rawValue) confidence")
                 }
-                .padding(14)
-                .card()
+                .frame(width: 28)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(verdictHeadline)
+                        .font(.headline)
+                    if let subtitle = verdictSubtitle {
+                        Text(subtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+
+            ForEach(receipt.validationReasons, id: \.self) { reason in
+                Label(reason, systemImage: "circle.fill")
+                    .labelStyle(BulletLabelStyle(tint: receipt.status.tint))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
         }
     }
 
     private var detailsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            SectionLabel("Details")
-            VStack(spacing: 0) {
-                DetailRow(label: "Payee", value: receipt.vendor ?? "—")
-                Divider().overlay(Theme.line)
-                DetailRow(label: "Date", value: receipt.longDateDisplay ?? "—")
-                Divider().overlay(Theme.line)
-                DetailRow(label: "Total", value: receipt.amountDisplay ?? "—")
-                if let tax = receipt.taxAmount {
-                    Divider().overlay(Theme.line)
-                    DetailRow(label: "GST/HST", value: tax.formatted(.currency(code: receipt.currency)))
-                }
-                if let registration = receipt.charityRegistration {
-                    Divider().overlay(Theme.line)
-                    DetailRow(label: "Registration #", value: registration)
-                }
+        Section("Details") {
+            LabeledContent("Payee", value: receipt.vendor ?? "—")
+            LabeledContent("Date", value: receipt.longDateDisplay ?? "—")
+            LabeledContent("Total", value: receipt.amountDisplay ?? "—")
+            if let tax = receipt.taxAmount {
+                LabeledContent("GST/HST", value: tax.formatted(.currency(code: receipt.currency)))
             }
-            .padding(.horizontal, 14)
-            .card()
+            if let registration = receipt.charityRegistration {
+                LabeledContent("Registration №", value: registration)
+            }
+            if let provider = receipt.providerName {
+                LabeledContent("Provider", value: provider)
+            }
+        }
+    }
+
+    // MARK: Copy
+
+    private var verdictHeadline: String {
+        switch receipt.status {
+        case .processing: "Reading on device…"
+        case .acceptable: receipt.acceptabilityOverride ? "Marked CRA-ready by you" : "Looks CRA-ready"
+        case .needsAttention: "Needs attention before you claim it"
+        case .notATaxReceipt: "This doesn’t look like a tax receipt"
+        case .failed: "Couldn’t read this one"
+        }
+    }
+
+    private var verdictSubtitle: String? {
+        switch receipt.status {
+        case .acceptable: "It carries what the CRA looks for to support a claim."
+        case .failed: "Edit the details by hand, or try reading it again."
+        default: nil
         }
     }
 
     private func delete() {
         modelContext.delete(receipt)
         try? modelContext.save()
-        dismiss()
     }
 }
 
-// MARK: - Small detail pieces
-
-private struct ValidationCard: View {
-    let tone: BadgeTone
-    let icon: String
-    let title: String
-    let reasons: [String]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
-                Image(systemName: icon).foregroundStyle(tone.foreground)
-                Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(tone.foreground)
-            }
-            ForEach(reasons, id: \.self) { reason in
-                HStack(alignment: .top, spacing: 8) {
-                    Circle().fill(tone.foreground.opacity(0.6)).frame(width: 4, height: 4).padding(.top, 6)
-                    Text(reason).font(.caption).foregroundStyle(tone.foreground.opacity(0.9))
-                }
-            }
+/// Small bulleted-reason label: a tiny tinted dot + text.
+private struct BulletLabelStyle: LabelStyle {
+    var tint: Color
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "circle.fill")
+                .font(.system(size: 5))
+                .foregroundStyle(tint)
+            configuration.title
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(tone.background, in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
-        .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius).strokeBorder(tone.foreground.opacity(0.2)))
     }
-}
-
-struct SectionLabel: View {
-    let text: String
-    init(_ text: String) { self.text = text }
-    var body: some View {
-        Text(text.uppercased())
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(Theme.muted)
-            .kerning(0.5)
-    }
-}
-
-private struct DetailRow: View {
-    let label: String
-    let value: String
-    var body: some View {
-        HStack {
-            Text(label).font(.caption).foregroundStyle(Theme.muted)
-            Spacer()
-            Text(value).font(.subheadline.weight(.medium)).foregroundStyle(Theme.ink)
-                .multilineTextAlignment(.trailing)
-        }
-        .padding(.vertical, 10)
-    }
-}
-
-/// Shared white card chrome.
-private struct Card: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .background(Color.white, in: RoundedRectangle(cornerRadius: Theme.cornerRadius))
-            .overlay(RoundedRectangle(cornerRadius: Theme.cornerRadius).strokeBorder(Theme.line))
-    }
-}
-
-extension View {
-    func card() -> some View { modifier(Card()) }
 }
 
 #Preview {

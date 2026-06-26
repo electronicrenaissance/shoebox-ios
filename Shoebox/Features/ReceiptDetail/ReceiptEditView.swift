@@ -1,9 +1,9 @@
 import SwiftUI
 import SwiftData
 
-/// Manual correction of the AI's reading (PRD FR-AI5 / FR-R3): every extracted
-/// field, the matched line(s), and an acceptability override are editable. The
-/// immutable `aiBaselineJSON` is preserved so corrections can be measured.
+/// Manual correction of the model's reading (PRD FR-AI5 / FR-R3): every extracted
+/// field, the matched line(s), and an acceptability override. A native grouped
+/// `Form` presented as a sheet. The immutable `aiBaselineJSON` is preserved.
 struct ReceiptEditView: View {
     @Bindable var receipt: Receipt
 
@@ -21,31 +21,47 @@ struct ReceiptEditView: View {
         NavigationStack {
             Form {
                 Section("Details") {
-                    LabeledTextField(label: "Payee", text: vendorBinding)
-                    Toggle("Has a date", isOn: $hasDate)
+                    TextField("Payee", text: optionalText(\.vendor))
+                    Toggle("Has a date", isOn: $hasDate.animation())
                     if hasDate {
                         DatePicker("Date", selection: dateBinding, displayedComponents: .date)
                     }
-                    LabeledNumberField(label: "Total", value: $receipt.total)
-                    LabeledTextField(label: "Currency", text: $receipt.currency)
-                    LabeledNumberField(label: "GST/HST", value: $receipt.taxAmount)
-                    LabeledTextField(label: "Description", text: detailsBinding)
+                    LabeledContent("Total") {
+                        TextField("Amount", value: $receipt.total, format: .number)
+                            .multilineTextAlignment(.trailing)
+                            #if !targetEnvironment(macCatalyst)
+                            .keyboardType(.decimalPad)
+                            #endif
+                    }
+                    TextField("Currency", text: $receipt.currency)
+                    LabeledContent("GST/HST") {
+                        TextField("Tax", value: $receipt.taxAmount, format: .number)
+                            .multilineTextAlignment(.trailing)
+                            #if !targetEnvironment(macCatalyst)
+                            .keyboardType(.decimalPad)
+                            #endif
+                    }
+                    TextField("Description", text: optionalText(\.details), axis: .vertical)
+                        .lineLimit(1...4)
                 }
 
                 Section("Identifiers") {
-                    LabeledTextField(label: "Charity registration #", text: charityBinding)
-                    LabeledTextField(label: "Provider name", text: providerBinding)
+                    TextField("Charity registration №", text: optionalText(\.charityRegistration))
+                    TextField("Provider name", text: optionalText(\.providerName))
                 }
 
-                Section("Tax lines") {
+                Section("Tax Lines") {
                     ForEach(TaxLineCode.allCases, id: \.self) { code in
                         Toggle(isOn: lineBinding(for: code)) {
-                            let meta = TaxLine.meta(for: code)
-                            VStack(alignment: .leading) {
-                                Text(meta.category)
-                                if let line = meta.line {
-                                    Text("Line \(line)").font(.caption).foregroundStyle(Theme.muted)
+                            Label {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(code.category)
+                                    Text(code.lineSubtitle)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
+                            } icon: {
+                                Image(systemName: code.systemImage)
                             }
                         }
                     }
@@ -57,14 +73,17 @@ struct ReceiptEditView: View {
                     Text("Override the automatic check and treat this receipt as acceptable.")
                 }
             }
-            .navigationTitle("Edit receipt")
+            .formStyle(.grouped)
+            .navigationTitle("Edit Receipt")
+            #if !targetEnvironment(macCatalyst)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { modelContext.rollback(); dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save", action: save).fontWeight(.semibold)
+                    Button("Save", action: save)
                 }
             }
         }
@@ -83,12 +102,7 @@ struct ReceiptEditView: View {
         dismiss()
     }
 
-    // MARK: Bindings (optional string ↔ non-optional field helpers)
-
-    private var vendorBinding: Binding<String> { optionalText(\.vendor) }
-    private var detailsBinding: Binding<String> { optionalText(\.details) }
-    private var charityBinding: Binding<String> { optionalText(\.charityRegistration) }
-    private var providerBinding: Binding<String> { optionalText(\.providerName) }
+    // MARK: Bindings
 
     private var dateBinding: Binding<Date> {
         Binding(get: { receipt.date ?? .now }, set: { receipt.date = $0 })
@@ -114,34 +128,6 @@ struct ReceiptEditView: View {
                 }
             }
         )
-    }
-}
-
-// MARK: - Field rows
-
-private struct LabeledTextField: View {
-    let label: String
-    @Binding var text: String
-    var body: some View {
-        HStack {
-            Text(label).foregroundStyle(Theme.muted)
-            Spacer()
-            TextField(label, text: $text).multilineTextAlignment(.trailing)
-        }
-    }
-}
-
-private struct LabeledNumberField: View {
-    let label: String
-    @Binding var value: Double?
-    var body: some View {
-        HStack {
-            Text(label).foregroundStyle(Theme.muted)
-            Spacer()
-            TextField(label, value: $value, format: .number)
-                .multilineTextAlignment(.trailing)
-                .keyboardType(.decimalPad)
-        }
     }
 }
 

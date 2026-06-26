@@ -11,34 +11,42 @@ enum ReceiptStatus: String, Codable, Sendable {
     case notATaxReceipt = "not_a_tax_receipt"
     case failed
 
-    /// Short label for the status pill.
+    /// Short label for the status indicator.
     var label: String {
         switch self {
-        case .processing: "Reading…"
+        case .processing: "Reading"
         case .acceptable: "CRA-ready"
         case .needsAttention: "Needs attention"
         case .notATaxReceipt: "Not a tax receipt"
-        case .failed: "Failed"
+        case .failed: "Couldn’t read"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .processing: "arrow.triangle.2.circlepath"
-        case .acceptable: "checkmark.circle.fill"
+        case .processing: "clock"
+        case .acceptable: "checkmark.seal.fill"
         case .needsAttention: "exclamationmark.triangle.fill"
-        case .notATaxReceipt: "xmark.circle"
-        case .failed: "exclamationmark.triangle.fill"
+        case .notATaxReceipt: "xmark.seal.fill"
+        case .failed: "exclamationmark.octagon.fill"
         }
     }
 
-    /// Tint used by `StatusBadge`, mapping onto the design system tones.
-    var tone: BadgeTone {
+    /// Semantic tint — adapts to light/dark automatically.
+    var tint: Color {
         switch self {
-        case .processing: .muted
-        case .acceptable: .ok
-        case .needsAttention: .warn
-        case .notATaxReceipt, .failed: .fail
+        case .processing: .secondary
+        case .acceptable: .green
+        case .needsAttention: .orange
+        case .notATaxReceipt, .failed: .red
+        }
+    }
+
+    /// Whether this state represents something the user should look at.
+    var needsReview: Bool {
+        switch self {
+        case .needsAttention, .notATaxReceipt, .failed: true
+        case .processing, .acceptable: false
         }
     }
 }

@@ -1,36 +1,38 @@
 import SwiftUI
 
-/// Renders a receipt's thumbnail, or a stylized placeholder when there's no
-/// image yet (e.g. a `processing` or seeded receipt).
+/// A receipt's thumbnail, or a system placeholder when there's no image yet
+/// (a seeded or still-processing receipt). Native rounded-rect styling with a
+/// hairline separator border.
 struct ReceiptThumbnail: View {
     var data: Data?
-    var isProcessing: Bool = false
+    var isProcessing = false
+    var size = CGSize(width: 46, height: 58)
 
     var body: some View {
-        Group {
+        ZStack {
+            Color(.secondarySystemBackground)
+
             if let data, let image = UIImage(data: data) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
             } else {
-                placeholder
+                Image(systemName: "doc.text")
+                    .imageScale(.large)
+                    .foregroundStyle(.tertiary)
+            }
+
+            if isProcessing {
+                Rectangle().fill(.ultraThinMaterial)
+                ProgressView().controlSize(.small)
             }
         }
-        .frame(width: 44, height: 56)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.line))
-        .opacity(isProcessing ? 0.6 : 1)
-    }
-
-    private var placeholder: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Capsule().fill(Theme.line).frame(width: 24, height: 3)
-            Capsule().fill(Theme.line).frame(width: 16, height: 3)
-            Spacer(minLength: 0)
-            Capsule().fill(Theme.brand.opacity(0.3)).frame(width: 20, height: 3)
-        }
-        .padding(6)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(Color.white)
+        .frame(width: size.width, height: size.height)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(Color(.separator).opacity(0.6), lineWidth: 0.5)
+        )
+        .accessibilityHidden(true)
     }
 }
