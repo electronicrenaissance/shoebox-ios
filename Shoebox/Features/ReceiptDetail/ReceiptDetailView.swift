@@ -6,6 +6,9 @@ import SwiftData
 /// extracted details, and destructive/maintenance actions.
 struct ReceiptDetailView: View {
     @Bindable var receipt: Receipt
+    /// Called just before deletion so the container can clear its selection
+    /// (resetting the detail pane and popping on iPhone).
+    var onDelete: () -> Void = {}
 
     @Environment(\.modelContext) private var modelContext
     @Environment(ReceiptProcessor.self) private var processor
@@ -174,6 +177,9 @@ struct ReceiptDetailView: View {
     }
 
     private func delete() {
+        // Clear the selection first so the detail pane stops rendering this
+        // receipt before it's removed from the store.
+        onDelete()
         modelContext.delete(receipt)
         try? modelContext.save()
     }

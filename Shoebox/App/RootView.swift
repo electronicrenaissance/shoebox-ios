@@ -19,7 +19,7 @@ struct RootView: View {
             ReceiptListView(filter: filter ?? .all, selection: $selection)
                 .navigationSplitViewColumnWidth(min: 340, ideal: 400)
         } detail: {
-            DetailColumn(receipt: selection)
+            DetailColumn(receipt: selection) { selection = nil }
         }
         .navigationSplitViewStyle(.balanced)
         // Clearing selection when the filter changes avoids showing a receipt that
@@ -32,10 +32,11 @@ struct RootView: View {
 /// nothing is selected.
 private struct DetailColumn: View {
     let receipt: Receipt?
+    let onDelete: () -> Void
 
     var body: some View {
         if let receipt {
-            ReceiptDetailView(receipt: receipt)
+            ReceiptDetailView(receipt: receipt, onDelete: onDelete)
         } else {
             ContentUnavailableView(
                 "No Receipt Selected",
