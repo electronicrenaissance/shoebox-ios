@@ -21,5 +21,26 @@ struct ShoeboxApp: App {
                 .environment(processor)
         }
         .modelContainer(modelContainer)
+        #if targetEnvironment(macCatalyst)
+        .commands {
+            CommandGroup(after: .saveItem) {
+                ExportMenuCommand()
+            }
+        }
+        #endif
     }
 }
+
+#if targetEnvironment(macCatalyst)
+/// File ▸ Export… (⇧⌘S) — drives the focused window's export (the same Save panel
+/// as the toolbar button). Disabled when no window publishes an export action.
+private struct ExportMenuCommand: View {
+    @FocusedValue(\.exportAction) private var exportAction
+
+    var body: some View {
+        Button("Export…") { exportAction?() }
+            .keyboardShortcut("s", modifiers: [.command, .shift])
+            .disabled(exportAction == nil)
+    }
+}
+#endif

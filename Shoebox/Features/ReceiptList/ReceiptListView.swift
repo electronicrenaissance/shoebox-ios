@@ -25,6 +25,12 @@ struct ReceiptListView: View {
     @State private var isImportingPDF = false
     @State private var photoItem: PhotosPickerItem?
 
+    // Export (Mac uses a Save panel; iPhone/iPad use a Share sheet)
+    #if targetEnvironment(macCatalyst)
+    @State private var exportDocument: CSVDocument?
+    @State private var isExporting = false
+    #endif
+
     private var receipts: [Receipt] {
         var list = allReceipts.filter(filter.matches)
         if !searchText.isEmpty {
@@ -69,6 +75,18 @@ struct ReceiptListView: View {
         .fileImporter(isPresented: $isImportingPDF, allowedContentTypes: [.pdf]) { result in
             handlePDFImport(result)
         }
+        #if targetEnvironment(macCatalyst)
+        .fileExporter(
+            isPresented: $isExporting,
+            document: exportDocument,
+            contentType: .commaSeparatedText,
+            defaultFilename: exportFilename
+        ) { _ in }
+        .focusedValue(\.exportAction, receipts.isEmpty ? nil : {
+            exportDocument = CSVDocument(text: ReceiptCSV.make(from: receipts))
+            isExporting = true
+        })
+        #endif
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             Task { await handlePhotoPick(item) }
@@ -80,6 +98,8 @@ struct ReceiptListView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
+            exportControl
+
             Menu {
                 Picker("Sort By", selection: $sort) {
                     ForEach(ReceiptSort.allCases) { option in
@@ -101,6 +121,28 @@ struct ReceiptListView: View {
             }
             .keyboardShortcut("n", modifiers: .command)
         }
+    }
+
+    private var exportFilename: String { "Shoebox - \(filter.title)" }
+
+    /// Mac: a Save panel via `.fileExporter`. iPhone/iPad: the system Share sheet.
+    @ViewBuilder
+    private var exportControl: some View {
+        #if targetEnvironment(macCatalyst)
+        Button("Export", systemImage: "square.and.arrow.up") {
+            exportDocument = CSVDocument(text: ReceiptCSV.make(from: receipts))
+            isExporting = true
+        }
+        .disabled(receipts.isEmpty)
+        #else
+        ShareLink(
+            item: CSVExport(text: ReceiptCSV.make(from: receipts), filename: exportFilename),
+            preview: SharePreview(exportFilename)
+        ) {
+            Label("Export", systemImage: "square.and.arrow.up")
+        }
+        .disabled(receipts.isEmpty)
+        #endif
     }
 
     // MARK: Empty states
