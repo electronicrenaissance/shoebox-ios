@@ -180,7 +180,7 @@ version is gone — the model writes back to the same context the UI observes.
 `ModelConfiguration(cloudKitDatabase: .automatic)` binds the SwiftData store to
 the user's **private** CloudKit database **when the iCloud entitlement is
 provisioned at runtime** (the entitlements file declares exactly one container,
-`iCloud.com.vivtechnologies.shoebox`, so `.automatic` resolves to it). On the
+`iCloud.ca.electronicrenaissance.shoebox`, so `.automatic` resolves to it). On the
 Simulator or in unsigned builds the entitlement isn't applied, so `.automatic`
 stays a local store rather than trapping during CloudKit setup — which is also the
 signed-out-of-iCloud behaviour (FR-ID3). (`.private(id)` is avoided because it

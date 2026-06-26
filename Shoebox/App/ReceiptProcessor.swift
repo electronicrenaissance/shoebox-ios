@@ -10,7 +10,7 @@ import os
 @Observable
 final class ReceiptProcessor {
     private let reader: ReceiptReader
-    private let logger = Logger(subsystem: "com.vivtechnologies.shoebox", category: "processing")
+    private let logger = Logger(subsystem: "ca.electronicrenaissance.shoebox", category: "processing")
 
     init(reader: ReceiptReader) {
         self.reader = reader

@@ -7,7 +7,7 @@ import SwiftData
 /// we operate. Previews and tests use an in-memory store.
 enum ShoeboxStore {
     /// CloudKit container id — must match `Shoebox.entitlements`.
-    static let cloudKitContainerID = "iCloud.com.vivtechnologies.shoebox"
+    static let cloudKitContainerID = "iCloud.ca.electronicrenaissance.shoebox"
 
     @MainActor
     static func makeContainer(inMemory: Bool = false) -> ModelContainer {

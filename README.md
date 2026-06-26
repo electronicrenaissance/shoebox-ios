@@ -46,7 +46,7 @@ for the architecture.
   M-series, AI enabled). On other devices the app still runs — capture and manual
   entry work; automatic reading is skipped with an explanation.
 - An **Apple Developer account** for CloudKit (set your team in Xcode). CloudKit
-  container: `iCloud.com.vivtechnologies.shoebox`.
+  container: `iCloud.ca.electronicrenaissance.shoebox`.
 
 ## Getting started
 

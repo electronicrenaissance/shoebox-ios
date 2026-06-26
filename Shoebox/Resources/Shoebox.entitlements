@@ -11,7 +11,7 @@
 	</array>
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
-		<string>iCloud.com.vivtechnologies.shoebox</string>
+		<string>iCloud.ca.electronicrenaissance.shoebox</string>
 	</array>
 
 	<!-- CloudKit silent push for cross-device sync. -->

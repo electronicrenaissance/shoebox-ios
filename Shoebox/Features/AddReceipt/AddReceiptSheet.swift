@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
+import VisionKit
 
 /// Bottom sheet offering the three capture paths (PRD FR-C1/C2/C3): scan with the
 /// camera, pick an image, or import a PDF. Each path produces a `ReceiptInput`
@@ -22,11 +23,15 @@ struct AddReceiptSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.bottom, 4)
 
-                CaptureOption(
-                    icon: "camera",
-                    title: "Take a photo",
-                    subtitle: "Scan a paper receipt with the camera"
-                ) { showingScanner = true }
+                // The document scanner only exists where there's a camera (iPhone/
+                // iPad) — not on Mac. Hide it elsewhere; import paths still work.
+                if VNDocumentCameraViewController.isSupported {
+                    CaptureOption(
+                        icon: "camera",
+                        title: "Take a photo",
+                        subtitle: "Scan a paper receipt with the camera"
+                    ) { showingScanner = true }
+                }
 
                 PhotosPicker(selection: $photoItem, matching: .images) {
                     CaptureOptionLabel(

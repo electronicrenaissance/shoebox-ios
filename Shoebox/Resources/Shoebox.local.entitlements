@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Local-run entitlements for ad-hoc signing on a Mac WITHOUT a provisioned
+	     Apple Developer team. Intentionally omits CloudKit / push so the app can
+	     be signed and launched locally; storage falls back to a local store
+	     (ModelConfiguration uses .automatic). Use Shoebox.entitlements for real,
+	     team-signed builds that should sync to iCloud. -->
+</dict>
+</plist>

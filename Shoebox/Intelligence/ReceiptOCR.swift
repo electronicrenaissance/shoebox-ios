@@ -4,11 +4,25 @@ import UIKit
 import PDFKit
 
 /// On-device text recognition. The Apple Intelligence language model is
-/// text-only, so we OCR the capture first with the Vision framework and feed the
-/// recognized text into the model. PDFs are rendered to an image first.
+/// text-only, so we get the receipt's text first and feed it to the model.
+///
+/// For PDFs we prefer the document's **embedded text layer** (clean, exact) when
+/// it has one, and fall back to rasterizing + Vision OCR for scanned PDFs and all
+/// images.
 enum ReceiptOCR {
     /// Recognize the receipt's text, newline-separated in reading order.
     static func recognizeText(from input: ReceiptInput) async throws -> String {
+        let log = IntelligenceLog.logger
+        log.info("OCR start: \(input.fileName, privacy: .public) [\(input.mimeType, privacy: .public), \(input.data.count) bytes]")
+
+        // Prefer a PDF's embedded text layer over OCR'ing a rasterized page.
+        if input.mimeType == "application/pdf", let embedded = embeddedPDFText(input.data) {
+            log.info("Text source: PDF embedded layer — \(embedded.count) chars")
+            log.debug("Recognized text (PDF embedded layer):\n\(embedded, privacy: .public)")
+            return embedded
+        }
+
+        let started = Date()
         let cgImage = try rasterize(input)
 
         var request = RecognizeTextRequest()
@@ -19,11 +33,25 @@ enum ReceiptOCR {
         let text = observations
             .compactMap { $0.topCandidates(1).first?.string }
             .joined(separator: "\n")
+        let elapsedMs = Int(Date().timeIntervalSince(started) * 1000)
+
+        log.info("Text source: Vision OCR — \(observations.count) lines, \(text.count) chars in \(elapsedMs)ms")
+        log.debug("Recognized text (Vision OCR):\n\(text, privacy: .public)")
 
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            log.error("OCR found no readable text in \(input.fileName, privacy: .public)")
             throw ReceiptReaderError.noTextFound
         }
         return text
+    }
+
+    /// The PDF's embedded text layer, if it carries one with real content.
+    /// Returns `nil` for scanned/image-only PDFs so the caller falls back to OCR.
+    static func embeddedPDFText(_ data: Data) -> String? {
+        guard let document = PDFDocument(data: data) else { return nil }
+        let text = (document.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        // Require some substance — a near-empty layer means it's effectively a scan.
+        return text.count >= 20 ? text : nil
     }
 
     /// Decode the capture to a `CGImage`, rendering the first page for a PDF.
