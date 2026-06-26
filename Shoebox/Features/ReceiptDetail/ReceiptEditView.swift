@@ -68,9 +68,9 @@ struct ReceiptEditView: View {
                 }
 
                 Section {
-                    Toggle("Mark CRA-ready", isOn: $receipt.acceptabilityOverride)
+                    Toggle("Mark CRA-ready", isOn: isCRAReadyBinding)
                 } footer: {
-                    Text("Override the automatic check and treat this receipt as acceptable.")
+                    Text("Treat this receipt as acceptable to the CRA.")
                 }
             }
             .formStyle(.grouped)
@@ -93,10 +93,6 @@ struct ReceiptEditView: View {
 
     private func save() {
         if !hasDate { receipt.date = nil }
-        if receipt.acceptabilityOverride {
-            receipt.status = .acceptable
-            receipt.validationReasons = []
-        }
         receipt.updatedAt = .now
         try? modelContext.save()
         dismiss()
@@ -106,6 +102,18 @@ struct ReceiptEditView: View {
 
     private var dateBinding: Binding<Date> {
         Binding(get: { receipt.date ?? .now }, set: { receipt.date = $0 })
+    }
+
+    /// Toggling "Mark CRA-ready" sets the status directly: on → acceptable (and
+    /// clears the validation reasons), off → needs attention.
+    private var isCRAReadyBinding: Binding<Bool> {
+        Binding(
+            get: { receipt.status == .acceptable },
+            set: { isOn in
+                receipt.status = isOn ? .acceptable : .needsAttention
+                if isOn { receipt.validationReasons = [] }
+            }
+        )
     }
 
     private func optionalText(_ keyPath: ReferenceWritableKeyPath<Receipt, String?>) -> Binding<String> {

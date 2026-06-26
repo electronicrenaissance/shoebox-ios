@@ -57,9 +57,6 @@ final class Receipt {
     /// Reasons explaining a non-`acceptable` verdict; empty when acceptable.
     var validationReasons: [String] = []
 
-    /// User forced the receipt to `acceptable` regardless of the AI verdict.
-    var acceptabilityOverride: Bool = false
-
     // MARK: Matched lines (PRD FR-AI4)
 
     /// One or more matched lines; empty while processing or if unmatched.
