@@ -138,16 +138,16 @@ struct ReceiptDetailView: View {
 
     private var detailsSection: some View {
         Section("Details") {
-            LabeledContent("Payee", value: receipt.vendor ?? "—")
-            LabeledContent("Date", value: receipt.longDateDisplay ?? "—")
-            LabeledContent("Total", value: receipt.amountDisplay ?? "—")
+            LabeledContent("Payee", value: receipt.vendor.sanitized ?? "")
+            LabeledContent("Date", value: receipt.longDateDisplay ?? "")
+            LabeledContent("Total", value: receipt.amountDisplay ?? "")
             if let tax = receipt.taxAmount {
                 LabeledContent("GST/HST", value: tax.formatted(.currency(code: receipt.currency)))
             }
-            if let registration = receipt.charityRegistration {
+            if let registration = receipt.charityRegistration.sanitized {
                 LabeledContent("Registration №", value: registration)
             }
-            if let provider = receipt.providerName {
+            if let provider = receipt.providerName.sanitized {
                 LabeledContent("Provider", value: provider)
             }
         }

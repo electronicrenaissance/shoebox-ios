@@ -77,14 +77,14 @@ final class Receipt {
     /// Apply the on-device reader's result, stamping `updatedAt` and recording the
     /// immutable AI baseline the first time.
     func apply(_ result: ReceiptReading) {
-        vendor = result.vendor
+        vendor = result.vendor.sanitized
         date = result.parsedDate
         total = result.total
-        currency = result.currency ?? "CAD"
+        currency = result.currency.sanitized ?? "CAD"
         taxAmount = result.taxAmount
-        details = result.details
-        charityRegistration = result.charityRegistration
-        providerName = result.providerName
+        details = result.details.sanitized
+        charityRegistration = result.charityRegistration.sanitized
+        providerName = result.providerName.sanitized
         validationReasons = result.reasons
         matchedLines = result.matchedLines
         status = result.status

@@ -118,8 +118,8 @@ struct ReceiptEditView: View {
 
     private func optionalText(_ keyPath: ReferenceWritableKeyPath<Receipt, String?>) -> Binding<String> {
         Binding(
-            get: { receipt[keyPath: keyPath] ?? "" },
-            set: { receipt[keyPath: keyPath] = $0.isEmpty ? nil : $0 }
+            get: { receipt[keyPath: keyPath].sanitized ?? "" },
+            set: { receipt[keyPath: keyPath] = $0.sanitized }
         )
     }
 

@@ -5,8 +5,8 @@ extension Receipt {
     var vendorDisplay: String {
         switch status {
         case .processing: "Reading receipt…"
-        case .failed where vendor == nil: "Couldn't read this one"
-        default: vendor ?? "Untitled receipt"
+        case .failed where vendor.sanitized == nil: "Couldn't read this one"
+        default: vendor.sanitized ?? "Untitled receipt"
         }
     }
 

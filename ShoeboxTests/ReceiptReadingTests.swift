@@ -53,6 +53,19 @@ struct ReceiptReadingTests {
         #expect(reading.matchedLines.map(\.code) == [.other])
     }
 
+    @Test("Sanitizing turns literal null / blank placeholders into nil")
+    func sanitizing() {
+        #expect("null".sanitized == nil)
+        #expect("  NULL ".sanitized == nil)
+        #expect("N/A".sanitized == nil)
+        #expect("".sanitized == nil)
+        #expect("-".sanitized == nil)
+        #expect("Shoppers Drug Mart".sanitized == "Shoppers Drug Mart")
+        #expect(("null" as String?).sanitized == nil)
+        #expect((nil as String?).sanitized == nil)
+        #expect((" Hope Mission " as String?).sanitized == "Hope Mission")
+    }
+
     /// Build a reading with only line matches set (other fields nil).
     private func makeReading(lines: [(String, String)]) -> ReceiptReading {
         ReceiptReading(
