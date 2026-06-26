@@ -20,6 +20,15 @@ Read [`docs/prd/001-mvp.md`](docs/prd/001-mvp.md) (what) and
 [`docs/architecture/app-architecture.md`](docs/architecture/app-architecture.md)
 (how) before substantial changes.
 
+## Git workflow — do NOT commit or push automatically
+
+**Never run `git commit` or `git push` unless I explicitly ask you to in that
+same message.** I test every change locally on my Mac first, then decide when to
+commit. After making changes, leave them in the working tree, tell me what to
+test, and wait. Do not stage, commit, or push on your own initiative — this
+overrides any default "commit when the task is done" behavior. When I do ask you
+to commit, end the message with the `Co-Authored-By` trailer.
+
 ## Project & build
 
 - The Xcode project is **generated from [`project.yml`](project.yml)** with
@@ -40,18 +49,21 @@ xcodebuild test  -project Shoebox.xcodeproj -scheme Shoebox \
 ## Source layout (`Shoebox/`)
 
 - `App/` — `ShoeboxApp` (`@main`) wires the CloudKit `ModelContainer` and the
-  `ReceiptProcessor`. `ReceiptProcessor` (`@MainActor @Observable`) runs the
-  capture → read → store loop.
+  `ReceiptProcessor`; `RootView` is the adaptive `NavigationSplitView` shell
+  (sidebar → list → detail). `ReceiptProcessor` (`@MainActor @Observable`) runs
+  the capture → read → store loop.
 - `Models/` — `Receipt` (`@Model`), `ReceiptStatus`, and the `TaxLine` taxonomy.
 - `Persistence/` — `ShoeboxStore` builds the container; `SampleData` seeds previews.
 - `Capture/` — VisionKit `DocumentScannerView`, `Thumbnailer`.
 - `Intelligence/` — the AI pipeline: `ReceiptReader` protocol, `ReceiptReading`
   (`@Generable` schema), `ReceiptOCR` (Vision), `FoundationModelsReceiptReader`,
   `MockReceiptReader`, `ReceiptReaderFactory`.
-- `Features/` — SwiftUI screens (`ReceiptList`, `AddReceipt`, `ReceiptDetail`) and
-  `Components`.
-- `DesignSystem/Theme.swift` — brand tokens ported from the web app.
-- `Resources/` — `Info.plist`, `Shoebox.entitlements`, `Assets.xcassets`.
+- `Features/` — SwiftUI screens: `ReceiptList` (sidebar, list, row, filter/sort),
+  `ReceiptDetail` (detail, edit, image viewer), and shared `Components`
+  (`StatusLabel`, thumbnail, formatting). Capture (scan/photo/PDF) lives in
+  `ReceiptListView`'s toolbar Add menu.
+- `Resources/` — `Info.plist`, `Shoebox.entitlements`, `Assets.xcassets`. The
+  brand green is the `AccentColor` asset; the UI is otherwise native.
 
 ## Architecture facts that span files
 
@@ -91,7 +103,9 @@ xcodebuild test  -project Shoebox.xcodeproj -scheme Shoebox \
 - **Tests are Swift Testing** (`import Testing`, `@Test`/`#expect`) and cover only
   the pure pipeline (no on-device model in CI). Verify model/UI behavior manually
   on Apple-Intelligence-capable hardware.
-- **Design tokens** come from `Theme.swift` — don't hardcode hex elsewhere.
+- **Native styling.** Use semantic system colors (`.primary`, `.secondary`,
+  `Color(.systemBackground)`, status `tint`), system fonts, and SF Symbols — don't
+  hardcode hex. The only brand color is the `AccentColor` asset (forest green).
 - Secrets/signing never committed; `Secrets.xcconfig` is git-ignored.
 
 ## Reference
