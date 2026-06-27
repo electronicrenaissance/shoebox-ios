@@ -1,6 +1,20 @@
-import Foundation
+import SwiftUI
 
 extension TaxLineCode {
+    /// Distinct chart/accent color per line, used by the Summary chart and rows.
+    var tint: Color {
+        switch self {
+        case .medical: .teal
+        case .donations: .pink
+        case .childCare: .orange
+        case .digitalNews: .indigo
+        case .moving: .brown
+        case .homeAccessibility: .mint
+        case .politicalContributions: .purple
+        case .other: .gray
+        }
+    }
+
     /// SF Symbol representing the line, used in the sidebar and chips.
     var systemImage: String {
         switch self {

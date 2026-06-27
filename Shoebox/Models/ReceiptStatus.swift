@@ -41,12 +41,4 @@ enum ReceiptStatus: String, Codable, Sendable {
         case .notATaxReceipt, .failed: .red
         }
     }
-
-    /// Whether this state represents something the user should look at.
-    var needsReview: Bool {
-        switch self {
-        case .needsAttention, .notATaxReceipt, .failed: true
-        case .processing, .acceptable: false
-        }
-    }
 }

@@ -1,42 +1,34 @@
 import Foundation
 
-/// A sidebar selection: the whole shoebox, the "needs attention" smart list, or a
-/// single tax line.
-enum ReceiptFilter: Hashable {
-    case all
-    case needsAttention
-    case line(TaxLineCode)
-    case year(Int)
+/// The active receipts filter: an optional year and an optional tax line, applied
+/// together (AND). Both nil means "all receipts".
+struct ReceiptFilter: Hashable {
+    var year: Int?
+    var line: TaxLineCode?
 
-    var title: String {
-        switch self {
-        case .all: "All Receipts"
-        case .needsAttention: "Needs Attention"
-        case .line(let code): code.category
-        case .year(let year): String(year)
-        }
+    init(year: Int? = nil, line: TaxLineCode? = nil) {
+        self.year = year
+        self.line = line
     }
 
+    var isActive: Bool { year != nil || line != nil }
+
+    /// Navigation title, e.g. "All Receipts", "2026", "Medical expenses", or
+    /// "Medical expenses · 2026".
+    var title: String {
+        let parts = [line?.category, year.map { String($0) }].compactMap { $0 }
+        return parts.isEmpty ? "All Receipts" : parts.joined(separator: " · ")
+    }
+
+    /// Icon for placeholders.
     var systemImage: String {
-        switch self {
-        case .all: "tray.full.fill"
-        case .needsAttention: "exclamationmark.triangle.fill"
-        case .line(let code): code.systemImage
-        case .year: "calendar"
-        }
+        line?.systemImage ?? (year != nil ? "calendar" : "tray.full.fill")
     }
 
     func matches(_ receipt: Receipt) -> Bool {
-        switch self {
-        case .all:
-            return true
-        case .needsAttention:
-            return receipt.status.needsReview
-        case .line(let code):
-            return receipt.matchedLines.contains { $0.code == code }
-        case .year(let year):
-            return receipt.year == year
-        }
+        if let year, receipt.year != year { return false }
+        if let line, !receipt.matchedLines.contains(where: { $0.code == line }) { return false }
+        return true
     }
 }
 

@@ -1,14 +1,12 @@
 import SwiftUI
 import SwiftData
-import PhotosUI
-import VisionKit
 import UniformTypeIdentifiers
 
-/// The middle column: the user's receipts for the selected filter, searchable and
-/// sortable, with an Add menu that scans / picks / imports. Selecting a row drives
-/// the detail column (and pushes on iPhone).
+/// The Receipts tab: the user's receipts for the active filter, searchable and
+/// sortable. The toolbar carries Filter, an overflow (Sort/Export), and the "+"
+/// Add menu. Selecting a row drives the detail column (and pushes on iPhone).
 struct ReceiptListView: View {
-    let filter: ReceiptFilter
+    @Binding var filter: ReceiptFilter
     @Binding var selection: Receipt?
 
     @Environment(\.modelContext) private var modelContext
@@ -19,13 +17,7 @@ struct ReceiptListView: View {
     @State private var searchText = ""
     @State private var sort: ReceiptSort = .dateNewest
 
-    // Capture presentation
-    @State private var isScanning = false
-    @State private var isPickingPhoto = false
-    @State private var isImportingPDF = false
-    @State private var photoItems: [PhotosPickerItem] = []
-
-    // Export (Mac uses a Save panel; iPhone/iPad use a Share sheet)
+    // Export — Mac uses a Save panel; iPhone/iPad use the Share sheet.
     #if targetEnvironment(macCatalyst)
     @State private var exportDocument: CSVDocument?
     @State private var isExporting = false
@@ -61,24 +53,6 @@ struct ReceiptListView: View {
         .searchable(text: $searchText, prompt: "Search receipts")
         .overlay { emptyState }
         .toolbar { toolbar }
-        .fullScreenCover(isPresented: $isScanning) {
-            DocumentScannerView(
-                onScan: { data in
-                    isScanning = false
-                    selection = ingest(data: data, mimeType: "image/jpeg", fileName: "scan-\(stamp).jpg")
-                },
-                onCancel: { isScanning = false }
-            )
-            .ignoresSafeArea()
-        }
-        .photosPicker(isPresented: $isPickingPhoto, selection: $photoItems, matching: .images)
-        .fileImporter(
-            isPresented: $isImportingPDF,
-            allowedContentTypes: [.pdf],
-            allowsMultipleSelection: true
-        ) { result in
-            handlePDFImport(result)
-        }
         #if targetEnvironment(macCatalyst)
         .fileExporter(
             isPresented: $isExporting,
@@ -91,12 +65,6 @@ struct ReceiptListView: View {
             isExporting = true
         })
         #endif
-        .onChange(of: photoItems) { _, items in
-            guard !items.isEmpty else { return }
-            let pending = items
-            photoItems = []
-            Task { await handlePhotoPicks(pending) }
-        }
     }
 
     // MARK: Toolbar
@@ -104,7 +72,13 @@ struct ReceiptListView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
-            exportControl
+            Menu {
+                filterMenu
+            } label: {
+                Label("Filter", systemImage: filter.isActive
+                    ? "line.3.horizontal.decrease.circle.fill"
+                    : "line.3.horizontal.decrease.circle")
+            }
 
             Menu {
                 Picker("Sort By", selection: $sort) {
@@ -112,30 +86,19 @@ struct ReceiptListView: View {
                         Label(option.label, systemImage: option.systemImage).tag(option)
                     }
                 }
+                exportControl
             } label: {
-                Label("Sort", systemImage: "arrow.up.arrow.down")
+                Label("More", systemImage: "ellipsis.circle")
             }
 
-            Menu {
-                if VNDocumentCameraViewController.isSupported {
-                    Button("Scan Document", systemImage: "doc.viewfinder") { isScanning = true }
-                }
-                Button("Choose Photos", systemImage: "photo.on.rectangle") { isPickingPhoto = true }
-                Button("Import PDFs", systemImage: "doc.badge.plus") { isImportingPDF = true }
-            } label: {
-                Label("Add Receipt", systemImage: "plus")
-            }
-            .keyboardShortcut("n", modifiers: .command)
+            AddReceiptMenu()
         }
     }
 
-    private var exportFilename: String { "Shoebox - \(filter.title)" }
-
-    /// Mac: a Save panel via `.fileExporter`. iPhone/iPad: the system Share sheet.
     @ViewBuilder
     private var exportControl: some View {
         #if targetEnvironment(macCatalyst)
-        Button("Export", systemImage: "square.and.arrow.up") {
+        Button("Export…", systemImage: "square.and.arrow.up") {
             exportDocument = CSVDocument(text: ReceiptCSV.make(from: receipts))
             isExporting = true
         }
@@ -151,6 +114,39 @@ struct ReceiptListView: View {
         #endif
     }
 
+    // MARK: Filter
+
+    @ViewBuilder
+    private var filterMenu: some View {
+        if filter.isActive {
+            Button("Clear Filters", systemImage: "xmark.circle") { filter = ReceiptFilter() }
+        }
+        Picker("Year", selection: $filter.year) {
+            Text("Any Year").tag(Int?.none)
+            ForEach(yearsPresent, id: \.self) { year in
+                Text(verbatim: String(year)).tag(Int?.some(year))
+            }
+        }
+        Picker("Tax Line", selection: $filter.line) {
+            Text("Any Line").tag(TaxLineCode?.none)
+            ForEach(linesPresent, id: \.self) { code in
+                Text(code.category).tag(TaxLineCode?.some(code))
+            }
+        }
+    }
+
+    private var yearsPresent: [Int] {
+        Set(allReceipts.map(\.year)).sorted(by: >)
+    }
+
+    private var linesPresent: [TaxLineCode] {
+        TaxLineCode.allCases.filter { code in
+            allReceipts.contains { $0.matchedLines.contains { $0.code == code } }
+        }
+    }
+
+    private var exportFilename: String { "Shoebox - \(filter.title)" }
+
     // MARK: Empty states
 
     @ViewBuilder
@@ -164,8 +160,7 @@ struct ReceiptListView: View {
                 } description: {
                     Text("Scan or import a receipt. Shoebox reads it on your device, checks it’s CRA-ready, and files it by tax line.")
                 } actions: {
-                    Button("Add a Receipt") { isPickingPhoto = true }
-                        .buttonStyle(.borderedProminent)
+                    AddReceiptButton()
                 }
             } else {
                 ContentUnavailableView(
@@ -177,7 +172,7 @@ struct ReceiptListView: View {
         }
     }
 
-    // MARK: Context menu
+    // MARK: Row menu + actions
 
     @ViewBuilder
     private func contextMenu(for receipt: Receipt) -> some View {
@@ -189,57 +184,9 @@ struct ReceiptListView: View {
         Button("Delete", systemImage: "trash", role: .destructive) { delete(receipt) }
     }
 
-    // MARK: Actions
-
     private func delete(_ receipt: Receipt) {
         if selection == receipt { selection = nil }
         modelContext.delete(receipt)
         try? modelContext.save()
-    }
-
-    /// Persist one capture and return the new receipt (for selection).
-    @discardableResult
-    private func ingest(data: Data, mimeType: String, fileName: String) -> Receipt? {
-        let id = processor.ingest(
-            ReceiptInput(data: data, mimeType: mimeType, fileName: fileName),
-            into: modelContext
-        )
-        return modelContext.model(for: id) as? Receipt
-    }
-
-    private func handlePhotoPicks(_ items: [PhotosPickerItem]) async {
-        // Load everything first, then ingest as one batch so the queue reads them
-        // in list order (top-down).
-        var datas: [Data] = []
-        for item in items {
-            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
-            datas.append(UIImage(data: data)?.jpegData(compressionQuality: 0.85) ?? data)
-        }
-        var ingested: [Receipt] = []
-        for (index, data) in datas.enumerated() {
-            if let receipt = ingest(data: data, mimeType: "image/jpeg", fileName: "photo-\(stamp)-\(index + 1).jpg") {
-                ingested.append(receipt)
-            }
-        }
-        // Auto-open only a single import; a batch stays on the list to watch it fill.
-        if ingested.count == 1 { selection = ingested.first }
-    }
-
-    private func handlePDFImport(_ result: Result<[URL], Error>) {
-        guard case .success(let urls) = result else { return }
-        var ingested: [Receipt] = []
-        for url in urls {
-            let scoped = url.startAccessingSecurityScopedResource()
-            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-            guard let data = try? Data(contentsOf: url) else { continue }
-            if let receipt = ingest(data: data, mimeType: "application/pdf", fileName: url.lastPathComponent) {
-                ingested.append(receipt)
-            }
-        }
-        if ingested.count == 1 { selection = ingested.first }
-    }
-
-    private var stamp: String {
-        Date.now.formatted(.iso8601.year().month().day())
     }
 }
