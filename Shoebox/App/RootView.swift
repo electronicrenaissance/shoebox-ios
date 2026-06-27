@@ -19,6 +19,8 @@ struct RootView: View {
     @State private var section: AppSection = .summary
     @State private var receiptsFilter = ReceiptFilter()
     @State private var receiptsSelection: Receipt?
+    /// A single import opens straight into Edit (presented here at the root).
+    @State private var editingReceipt: Receipt?
 
     var body: some View {
         @Bindable var importer = importer
@@ -67,6 +69,9 @@ struct RootView: View {
             importer.photoItems = []
             Task { await handlePhotoPicks(pending) }
         }
+        .sheet(item: $editingReceipt) { receipt in
+            ReceiptEditView(receipt: receipt)
+        }
     }
 
     // MARK: Ingest (shared by every import path)
@@ -80,10 +85,14 @@ struct RootView: View {
         return modelContext.model(for: id) as? Receipt
     }
 
-    /// Show the result of an import: jump to Receipts; open it if it was a single one.
+    /// Show the result of an import: jump to Receipts. A single import opens
+    /// straight into Edit; a batch stays on the list to watch it fill.
     private func reveal(_ receipts: [Receipt]) {
         section = .receipts
-        receiptsSelection = receipts.count == 1 ? receipts.first : nil
+        receiptsSelection = nil
+        if receipts.count == 1 {
+            editingReceipt = receipts.first
+        }
     }
 
     private func finishSingle(_ receipt: Receipt?) {
