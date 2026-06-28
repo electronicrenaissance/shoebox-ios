@@ -30,27 +30,21 @@ struct ReceiptReadingTests {
         }
     }
 
-    @Test("Only high-confidence, known, real lines are kept; medium/low/unknown/dupes are dropped")
-    func keepsOnlyHighConfidence() {
-        let reading = makeReading(lines: [
-            ("33099", "high"),
-            ("34900", "medium"),    // dropped: not high confidence
-            ("99999", "high"),      // dropped: unknown code
-            ("33099", "high"),      // dropped: duplicate
-        ])
+    @Test("A high-confidence real line is filed under that line")
+    func highConfidenceLineIsFiled() {
+        let reading = makeReading(line: .medical, confidence: .high)
         #expect(reading.matchedLines.map(\.code) == [.medical])
     }
 
-    @Test("Falls back to Other only when no high-confidence line qualifies")
-    func fallsBackToOther() {
-        let reading = makeReading(lines: [("34900", "medium"), ("21400", "low")])
-        #expect(reading.matchedLines.map(\.code) == [.other])
+    @Test("A non-high-confidence line falls back to Other")
+    func mediumConfidenceFallsBackToOther() {
+        #expect(makeReading(line: .donations, confidence: .medium).matchedLines.map(\.code) == [.other])
+        #expect(makeReading(line: nil, confidence: .low).matchedLines.map(\.code) == [.other])
     }
 
-    @Test("A model-returned 'other' is the fallback, never a real selection")
+    @Test("A 'other' line is the fallback, never a real selection")
     func otherIsNeverAReadSelection() {
-        let reading = makeReading(lines: [("other", "high")])
-        #expect(reading.matchedLines.map(\.code) == [.other])
+        #expect(makeReading(line: .other, confidence: .high).matchedLines.map(\.code) == [.other])
     }
 
     @Test("Sanitizing turns literal null / blank placeholders into nil")
@@ -71,28 +65,23 @@ struct ReceiptReadingTests {
         let receipt = Receipt(fileName: "x.jpg", mimeType: "image/jpeg", imageData: nil)
         #expect(receipt.date != nil)
         let original = receipt.date
-        receipt.apply(makeReading(lines: []))  // reading carries no date
+        receipt.apply(makeReading(line: nil, confidence: .low))  // reading carries no date
         #expect(receipt.date == original)
-    }
-
-    /// Build a reading with only line matches set (other fields nil).
-    private func makeReading(lines: [(String, String)]) -> ReceiptReading {
-        ReceiptReading(
-            vendor: nil, date: nil, total: nil, currency: nil, taxAmount: nil,
-            details: nil, charityRegistration: nil, providerName: nil,
-            verdict: .acceptable, reasons: [],
-            lines: lines.map { .init(code: $0.0, confidence: $0.1) }
-        )
     }
 
     @Test("ISO date strings parse into a Date")
     func dateParsing() {
-        let reading = ReceiptReading(
-            vendor: nil, date: "2026-06-14", total: nil, currency: nil, taxAmount: nil,
-            details: nil, charityRegistration: nil, providerName: nil,
-            verdict: .acceptable, reasons: [], lines: []
-        )
+        let reading = makeReading(line: nil, confidence: .low, date: "2026-06-14")
         let parsed = try? #require(reading.parsedDate)
         #expect(parsed != nil)
+    }
+
+    /// Build a minimal reading with just the line classification (other fields nil).
+    private func makeReading(line: TaxLineCode?, confidence: Confidence, date: String? = nil) -> ReceiptReading {
+        ReceiptReading(
+            vendor: nil, date: date, total: nil, currency: nil, taxAmount: nil,
+            details: nil, charityRegistration: nil, providerName: nil,
+            status: .acceptable, reasons: [], line: line, lineConfidence: confidence
+        )
     }
 }

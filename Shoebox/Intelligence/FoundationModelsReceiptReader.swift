@@ -1,14 +1,27 @@
 import Foundation
 import FoundationModels
 
-/// The production reader: Vision OCR → **Apple Intelligence** on-device language
-/// model with guided generation. Nothing leaves the device.
+/// The production reader: Vision document OCR → **Apple Intelligence** on-device
+/// model. Nothing leaves the device.
+///
+/// Two design points learned the hard way:
+/// - The read is **two sequential calls** (extract, then classify). The small model
+///   is reliable on a short, single-purpose prompt but drops fields (or tags every
+///   line) when asked to extract + validate + match at once.
+/// - We use **permissive content guardrails** and **terse** classification criteria.
+///   The default guardrail / verbose CRA criteria make the model's content
+///   classifier false-positive ("may contain sensitive content") and *refuse* on
+///   ordinary receipts that mention health, children, etc. Refusals are also caught
+///   and degraded so they can never fail a receipt.
 struct FoundationModelsReceiptReader: ReceiptReader {
+    /// Permissive guardrails — the mode Apple provides for transforming the user's
+    /// own content on-device (the default over-refuses on personal documents).
+    private let model = SystemLanguageModel(guardrails: .permissiveContentTransformations)
+
     func read(_ input: ReceiptInput) async throws -> ReceiptReading {
         let log = IntelligenceLog.logger
 
-        // Fail fast if Apple Intelligence isn't usable on this device.
-        switch SystemLanguageModel.default.availability {
+        switch model.availability {
         case .available:
             log.info("Apple Intelligence: available")
         case .unavailable(let reason):
@@ -16,92 +29,116 @@ struct FoundationModelsReceiptReader: ReceiptReader {
             throw ReceiptReaderError.modelUnavailable(String(describing: reason))
         }
 
-        let recognizedText = try await ReceiptOCR.recognizeText(from: input)
+        let text = try await ReceiptOCR.recognizeText(from: input)
+        let prompt = "RECEIPT TEXT:\n\(text)"
 
-        let session = LanguageModelSession(instructions: Self.instructions)
-        let prompt = """
-        Read the recognized text from one receipt below and return the structured result. \
-        Leave any field null if it is illegible or absent. Identify every T1 line it may apply to.
-
-        RECEIPT TEXT:
-        \(recognizedText)
-        """
-        log.debug("Model prompt:\n\(prompt, privacy: .public)")
-
-        let started = Date()
+        // Call 1 — extraction (deterministic). Degrade to empty on a refusal.
+        let extractStart = Date()
+        let extraction: ReceiptExtraction
         do {
-            // Low temperature keeps extraction and the verdict deterministic — the
-            // small on-device model is otherwise flaky run-to-run (it would
-            // occasionally return empty fields or contradict itself).
-            let response = try await session.respond(
-                to: prompt,
-                generating: ReceiptReading.self,
-                options: GenerationOptions(temperature: 0.1)
-            )
-            let reading = response.content
-            let elapsedMs = Int(Date().timeIntervalSince(started) * 1000)
-
-            let lines = reading.matchedLines
-                .map { "\($0.code.rawValue):\($0.confidence.rawValue)" }
-                .joined(separator: ",")
-            log.info("""
-            Model done in \(elapsedMs)ms → verdict=\(String(describing: reading.verdict), privacy: .public) \
-            lines=[\(lines, privacy: .public)] vendor=\(reading.vendor ?? "nil", privacy: .public) \
-            total=\(reading.total ?? -1) date=\(reading.date ?? "nil", privacy: .public) \
-            BN=\(reading.charityRegistration ?? "nil", privacy: .public)
-            """)
-            for reason in reading.reasons {
-                log.info("  reason: \(reason, privacy: .public)")
-            }
-            return reading
-        } catch {
-            let elapsedMs = Int(Date().timeIntervalSince(started) * 1000)
-            log.error("Model generation failed after \(elapsedMs)ms: \(error.localizedDescription, privacy: .public)")
-            throw error
+            extraction = try await generate(Self.extractInstructions, prompt, temperature: 0)
+        } catch let error as LanguageModelSession.GenerationError where error.isRefusal {
+            log.error("Extraction refused — degrading to empty fields")
+            extraction = .empty
         }
+        // Prefer the BN read from the PDF text layer; otherwise accept the model's
+        // value only if it's actually a charity-number format (not a plan/member ID).
+        let charityRegistration = ReceiptOCR.embeddedCharityNumber(from: input)
+            ?? extraction.charityRegistration.flatMap(ReceiptOCR.validCharityNumber)
+        let extractMs = Int(Date().timeIntervalSince(extractStart) * 1000)
+
+        // Call 2 — classification (single best line + verdict). Degrade to
+        // needs-attention/other on a refusal so the receipt is never lost.
+        let classifyStart = Date()
+        let classification: ReceiptClassification
+        do {
+            classification = try await generate(Self.classifyInstructions, prompt, temperature: 0.1)
+        } catch let error as LanguageModelSession.GenerationError where error.isRefusal {
+            log.error("Classification refused — defaulting to needs-attention / other")
+            classification = .refused
+        }
+        let classifyMs = Int(Date().timeIntervalSince(classifyStart) * 1000)
+
+        let reading = ReceiptReading(
+            vendor: extraction.vendor,
+            date: extraction.date,
+            total: extraction.total,
+            currency: extraction.currency,
+            taxAmount: extraction.taxAmount,
+            details: extraction.details,
+            charityRegistration: charityRegistration,
+            providerName: extraction.providerName,
+            status: classification.verdict.status,
+            reasons: classification.reasons,
+            line: TaxLineCode(rawValue: classification.line.lowercased()),
+            lineConfidence: Confidence(rawValue: classification.confidence.lowercased()) ?? .low
+        )
+
+        log.info("""
+        Read done (extract \(extractMs)ms + classify \(classifyMs)ms) → \
+        status=\(reading.status.rawValue, privacy: .public) line=\(classification.line, privacy: .public):\(classification.confidence, privacy: .public) \
+        vendor=\(reading.vendor ?? "nil", privacy: .public) total=\(reading.total ?? -1) \
+        date=\(reading.date ?? "nil", privacy: .public) BN=\(reading.charityRegistration ?? "nil", privacy: .public)
+        """)
+        for reason in reading.reasons {
+            log.info("  reason: \(reason, privacy: .public)")
+        }
+        return reading
     }
 
-    /// System instructions encoding the PRD §8 CRA acceptability criteria and the
-    /// validation / no-amount-computation rules. The criteria list is built from
-    /// the `TaxLine` taxonomy so adding a line there updates the prompt too.
-    ///
-    /// The verdict RULE is deliberately explicit: the small on-device model would
-    /// otherwise list a receipt's required elements as present yet still return
-    /// `needsAttention` (over-applying "when in doubt, flag it"). It also tends to
-    /// over-match lines, so we tell it to match only what clearly applies.
-    static let instructions: String = {
-        let criteria = TaxLineCode.allCases.map { code -> String in
-            let meta = TaxLine.meta(for: code)
-            let label = [meta.line, meta.category].compactMap { $0 }.joined(separator: " ")
-            return "- \(label): \(meta.acceptanceCriteria)"
-        }.joined(separator: "\n")
+    private func generate<Content: Generable>(
+        _ instructions: String,
+        _ prompt: String,
+        temperature: Double
+    ) async throws -> Content {
+        let session = LanguageModelSession(model: model, instructions: instructions)
+        return try await session.respond(
+            to: prompt,
+            generating: Content.self,
+            options: GenerationOptions(temperature: temperature)
+        ).content
+    }
 
-        return """
-        You are a careful assistant for a Canadian personal (T1) income-tax receipt organizer.
-        Given the text of ONE receipt, do three things:
+    // MARK: Instructions
 
-        1. EXTRACT the vendor, date (ISO yyyy-MM-dd), total, currency, tax amount, a short
-           description, and any identifiers (charity registration/BN number, child-care provider
-           name). Use null for anything that is absent or illegible.
+    static let extractInstructions = """
+    Extract the fields from the recognized text of ONE Canadian receipt. Use the exact values shown in
+    the text; use null ONLY when a value is truly absent. Never invent a vendor that is not in the text.
+    - vendor: the business or charity name
+    - date: the issue/transaction date as yyyy-MM-dd
+    - total, currency (default CAD), and GST/HST tax amount if shown
+    - a short description of what was purchased or donated
+    - charity registration number (format 9 digits + RR + 4 digits; null if no such number — never a phone number)
+    - child-care provider name
+    """
 
-        2. VALIDATE acceptability to the CRA, choosing exactly one verdict:
-           - acceptable: the receipt clearly contains ALL required elements for at least one matched line.
-           - needsAttention: it is a receipt, but one or more required elements are missing or unclear.
-           - notATaxReceipt: it is not a receipt, or not for an eligible expense.
-           RULE: If all required elements for a line are present, you MUST choose acceptable and leave
-           `reasons` empty. Do NOT downgrade a complete receipt or invent caveats. Only choose
-           needsAttention when a specific required element is missing — then name exactly what is missing.
+    /// Frames the choice as "paid for a service/product vs. gave a gift" — that
+    /// distinction is what reliably separates medical/child-care receipts from
+    /// donations (a charity can issue all three). Kept descriptive but not as
+    /// verbose as the full CRA criteria, which make the model's content classifier
+    /// refuse.
+    static let classifyInstructions = """
+    Pick the SINGLE best Canadian personal (T1) income-tax line this receipt is FOR, then a CRA verdict.
+    Decide by WHAT the person received and paid for:
+    - They PAID for a service or product they received → use the line for that service/product:
+      * health care or products (doctor, dentist, therapist; therapy such as physio/OT/speech/ABA; prescription;
+        medical device/equipment; treatment) → 33099 Medical expenses.
+      * child care (daycare, nursery, nanny, day camp, before/after-school care) → 21400 Child care expenses.
+      IMPORTANT: a receipt for a service or product is NEVER a donation, even when the provider is a registered
+      charity or non-profit and the receipt shows a registration/BN number or the words "for income tax purposes".
+    - They GAVE money as a gift/donation to a registered charity and received nothing in return (the receipt thanks
+      you for a donation/gift, says "official receipt for income tax purposes", and shows a charity BN) → 34900 Donations & gifts.
+    - Otherwise: 31350 Digital news subscription; 21900 Moving expenses; 31285 Home accessibility expenses;
+      40900 Federal political contributions; other.
+    Verdict: acceptable if it is a complete receipt for the chosen line (leave reasons empty); needsAttention if a
+    required element is missing or unclear (name what is missing); notATaxReceipt if it is not a receipt.
+    """
+}
 
-        3. MATCH only the line(s) that clearly apply, each with a confidence of high, medium, or low.
-           Use HIGH confidence only when the receipt clearly meets that line's required elements;
-           otherwise use medium or low. Returning no line is fine — do NOT force a match, and never
-           add a line that does not fit the document (for example, never tag a donation receipt as
-           child care).
-
-        Do NOT compute deductible or creditable amounts, apply thresholds, or total a claim.
-
-        Supported T1 lines and their required elements:
-        \(criteria)
-        """
-    }()
+extension LanguageModelSession.GenerationError {
+    /// The model declined to generate (its content classifier flagged the request).
+    var isRefusal: Bool {
+        if case .refusal = self { return true }
+        return false
+    }
 }

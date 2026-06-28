@@ -1,38 +1,45 @@
 import Foundation
 import FoundationModels
 
-/// The structured result the on-device model produces for one receipt, using
-/// Foundation Models **guided generation** (`@Generable` + `@Guide`). Guided
-/// generation forces the model to emit a value that conforms to this schema, so
-/// we get a typed object back instead of free text to parse.
-///
-/// Mirrors the `ReceiptReadResult` contract from the original backend
-/// (extraction + CRA verdict + matched lines), now computed entirely on device.
+/// Call 1 — extraction. A small, single-purpose schema so the on-device model
+/// reliably fills in the fields (a combined extract+validate+match call overloads
+/// the small model and it drops fields).
 @Generable
-struct ReceiptReading {
-    @Guide(description: "Vendor or payee name exactly as printed; null if not legible.")
+struct ReceiptExtraction {
+    @Guide(description: "The business or charity name printed on the receipt; null only if truly absent.")
     var vendor: String?
 
-    @Guide(description: "Transaction or issue date in ISO 8601 yyyy-MM-dd; null if not legible.")
+    @Guide(description: "Issue/transaction date as ISO 8601 yyyy-MM-dd; null if not present.")
     var date: String?
 
-    @Guide(description: "Grand total as a number, no currency symbol; null if not legible.")
+    @Guide(description: "Grand total as a number, no currency symbol; null if not present.")
     var total: Double?
 
     @Guide(description: "ISO currency code such as CAD or USD. Default to CAD when not shown.")
     var currency: String?
 
-    @Guide(description: "GST/HST tax amount as a number, if the receipt shows it; otherwise null.")
+    @Guide(description: "GST/HST tax amount as a number if the receipt shows it; otherwise null.")
     var taxAmount: Double?
 
-    @Guide(description: "Short description of what was purchased or the service provided; null if unclear.")
+    @Guide(description: "Short description of what was purchased or donated; null if unclear.")
     var details: String?
 
-    @Guide(description: "Registered-charity BN/registration number for donation receipts; null if absent.")
+    @Guide(description: "Charity registration number in the format 9 digits + RR + 4 digits (e.g. 123456789 RR0001); null if no such number is present. Never a phone number.")
     var charityRegistration: String?
 
-    @Guide(description: "Child-care provider name for child-care receipts; null if not applicable.")
+    @Guide(description: "Child-care provider name; null if not applicable.")
     var providerName: String?
+}
+
+/// Call 2 — classification. Picks the single best tax line plus the CRA verdict.
+/// A single-line output (not free multi-label) avoids the model tagging every line.
+@Generable
+struct ReceiptClassification {
+    @Guide(description: "The single best-matching T1 line code: 33099, 34900, 21400, 31350, 21900, 31285, 40900, or other.")
+    var line: String
+
+    @Guide(description: "Confidence the line is correct: high, medium, or low.")
+    var confidence: String
 
     @Guide(description: "CRA acceptability verdict. Be conservative: prefer needsAttention when unsure.")
     var verdict: Verdict
@@ -40,61 +47,48 @@ struct ReceiptReading {
     @Guide(description: "Specific reasons the receipt needs attention or is not a tax receipt. Empty when acceptable.")
     var reasons: [String]
 
-    @Guide(description: "Every T1 tax line this receipt may apply to. May be empty.")
-    var lines: [GeneratedMatch]
-
-    /// CRA acceptability verdict (PRD FR-AI3). `failed` is never produced here —
-    /// it is reserved for a thrown read (PRD FR-AI6).
     @Generable
     enum Verdict {
         case acceptable
         case needsAttention
         case notATaxReceipt
     }
-
-    /// One matched line as the model returns it (codes/confidence as strings so
-    /// the schema stays simple and robust); mapped to `TaxLineMatch` below.
-    @Generable
-    struct GeneratedMatch {
-        @Guide(description: "CRA line code: one of 33099, 34900, 21400, 31350, 21900, 31285, 40900, or other.")
-        var code: String
-
-        @Guide(description: "Match confidence: high, medium, or low.")
-        var confidence: String
-    }
 }
 
-// MARK: - Mapping to the persistence/domain model
+/// The merged result the reader returns (built from the two calls, or directly by
+/// the mock). The route maps it onto the receipt and keeps `asJSON()` as the raw
+/// AI baseline (PRD FR-AI5).
+struct ReceiptReading {
+    var vendor: String?
+    var date: String?
+    var total: Double?
+    var currency: String?
+    var taxAmount: Double?
+    var details: String?
+    var charityRegistration: String?
+    var providerName: String?
 
-extension ReceiptReading {
-    var status: ReceiptStatus {
-        switch verdict {
-        case .acceptable: .acceptable
-        case .needsAttention: .needsAttention
-        case .notATaxReceipt: .notATaxReceipt
-        }
-    }
+    /// CRA verdict + lifecycle. `failed` is never produced here — it's reserved for
+    /// a thrown read (PRD FR-AI6).
+    var status: ReceiptStatus
+    var reasons: [String]
+
+    /// Single best-matching line and how confident we are (`nil` line → uncategorized).
+    var line: TaxLineCode?
+    var lineConfidence: Confidence
 
     var parsedDate: Date? {
         guard let date else { return nil }
         return Self.isoDateFormatter.date(from: date)
     }
 
-    /// The lines to auto-categorize this receipt under. We keep **only matches the
-    /// model is highly confident about** — a real line (not `other`), known code,
-    /// high confidence, de-duplicated. If nothing qualifies, we fall back to a
-    /// single `Other / Uncategorized` entry so every receipt still files somewhere.
+    /// We file the receipt under its line only when the model is **highly
+    /// confident** about a real line; otherwise it falls back to `Other`.
     var matchedLines: [TaxLineMatch] {
-        var seen = Set<TaxLineCode>()
-        let confident = lines.compactMap { raw -> TaxLineMatch? in
-            guard
-                let code = TaxLineCode(rawValue: raw.code), code != .other,
-                Confidence(rawValue: raw.confidence.lowercased()) == .high,
-                seen.insert(code).inserted
-            else { return nil }
-            return TaxLineMatch(code: code, confidence: .high)
+        if let line, line != .other, lineConfidence == .high {
+            return [TaxLineMatch(code: line, confidence: .high)]
         }
-        return confident.isEmpty ? [TaxLineMatch(code: .other, confidence: .high)] : confident
+        return [TaxLineMatch(code: .other, confidence: .high)]
     }
 
     /// A stable JSON snapshot for the immutable AI baseline (PRD FR-AI5).
@@ -108,9 +102,10 @@ extension ReceiptReading {
             "details": details as Any,
             "charityRegistration": charityRegistration as Any,
             "providerName": providerName as Any,
-            "verdict": String(describing: verdict),
+            "status": status.rawValue,
             "reasons": reasons,
-            "lines": lines.map { ["code": $0.code, "confidence": $0.confidence] },
+            "line": line?.rawValue as Any,
+            "lineConfidence": lineConfidence.rawValue,
         ]
         guard
             let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys]),
@@ -126,4 +121,36 @@ extension ReceiptReading {
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()
+}
+
+extension ReceiptClassification.Verdict {
+    var status: ReceiptStatus {
+        switch self {
+        case .acceptable: .acceptable
+        case .needsAttention: .needsAttention
+        case .notATaxReceipt: .notATaxReceipt
+        }
+    }
+}
+
+extension ReceiptExtraction {
+    /// Used when the extraction call is refused — leaves everything for the user.
+    static var empty: ReceiptExtraction {
+        ReceiptExtraction(
+            vendor: nil, date: nil, total: nil, currency: nil,
+            taxAmount: nil, details: nil, charityRegistration: nil, providerName: nil
+        )
+    }
+}
+
+extension ReceiptClassification {
+    /// Used when the classify call is refused — files the receipt for manual review.
+    static var refused: ReceiptClassification {
+        ReceiptClassification(
+            line: "other",
+            confidence: "low",
+            verdict: .needsAttention,
+            reasons: ["Shoebox couldn’t automatically check this receipt — review the details and set the tax line."]
+        )
+    }
 }

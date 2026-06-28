@@ -1,12 +1,12 @@
 import Foundation
 
-/// Deterministic reader with no model dependency — used in SwiftUI previews,
-/// unit tests, and as a fallback on devices where Apple Intelligence is
-/// unavailable so the capture/review loop still works (manual review/edit).
+/// Deterministic reader with no model dependency — used in SwiftUI previews, unit
+/// tests, and as a fallback on devices where Apple Intelligence is unavailable so
+/// the capture/manual-edit loop still works.
 ///
-/// Keys off the filename so every branch is exercisable, mirroring the original
-/// backend mock: `donation*` → needs-attention donations, `daycare*` → child
-/// care, `blurry*` → throws → failed, otherwise → acceptable medical.
+/// Keys off the filename so every branch is exercisable: `donation*` →
+/// needs-attention donations, `daycare*` → child care, `blurry*` → throws → failed,
+/// otherwise → acceptable medical.
 struct MockReceiptReader: ReceiptReader {
     /// Artificial delay to mimic on-device latency in previews/tests.
     var delay: Duration = .milliseconds(400)
@@ -30,13 +30,13 @@ struct MockReceiptReader: ReceiptReader {
                 details: "Cash donation",
                 charityRegistration: nil,
                 providerName: nil,
-                verdict: .needsAttention,
+                status: .needsAttention,
                 reasons: [
                     "This looks like a store/sales slip, not the official donation receipt a registered charity must issue.",
                     "No charity registration (BN) number was found.",
-                    "Missing the words \"official receipt for income tax purposes\".",
                 ],
-                lines: [.init(code: "34900", confidence: "high")]
+                line: .donations,
+                lineConfidence: .high
             )
         }
 
@@ -50,9 +50,10 @@ struct MockReceiptReader: ReceiptReader {
                 details: "Monthly child care",
                 charityRegistration: nil,
                 providerName: "Bright Beginnings Daycare Inc.",
-                verdict: .acceptable,
+                status: .acceptable,
                 reasons: [],
-                lines: [.init(code: "21400", confidence: "high")]
+                line: .childCare,
+                lineConfidence: .high
             )
         }
 
@@ -65,9 +66,10 @@ struct MockReceiptReader: ReceiptReader {
             details: "Prescription",
             charityRegistration: nil,
             providerName: nil,
-            verdict: .acceptable,
+            status: .acceptable,
             reasons: [],
-            lines: [.init(code: "33099", confidence: "high")]
+            line: .medical,
+            lineConfidence: .high
         )
     }
 }
