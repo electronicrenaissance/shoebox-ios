@@ -17,6 +17,13 @@ struct ReceiptDetailView: View {
     @State private var showingImage = false
     @State private var confirmingDelete = false
 
+    // Download the original receipt file — Mac: Save panel; iPhone/iPad: Share sheet.
+    #if targetEnvironment(macCatalyst)
+    @State private var isSavingFile = false
+    #else
+    @State private var sharedFileURL: URL?
+    #endif
+
     var body: some View {
         Form {
             if receipt.imageData != nil {
@@ -65,10 +72,21 @@ struct ReceiptDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         #endif
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItemGroup(placement: .primaryAction) {
+                saveControl
                 Button("Edit") { showingEdit = true }
             }
         }
+        #if targetEnvironment(macCatalyst)
+        .fileExporter(
+            isPresented: $isSavingFile,
+            document: ReceiptFileDocument(data: receipt.imageData ?? Data()),
+            contentType: receipt.originalContentType,
+            defaultFilename: receipt.fileName
+        ) { _ in }
+        #else
+        .task(id: receipt.id) { sharedFileURL = receipt.writeTemporaryFile() }
+        #endif
         .sheet(isPresented: $showingEdit) {
             ReceiptEditView(receipt: receipt)
         }
@@ -82,6 +100,23 @@ struct ReceiptDetailView: View {
         } message: {
             Text("This removes the receipt and its image from your shoebox. This can’t be undone.")
         }
+    }
+
+    // MARK: Download
+
+    /// Download/share the original receipt file. Hidden when there's no stored file.
+    @ViewBuilder
+    private var saveControl: some View {
+        #if targetEnvironment(macCatalyst)
+        Button("Save Receipt…", systemImage: "square.and.arrow.down") { isSavingFile = true }
+            .disabled(receipt.imageData == nil)
+        #else
+        if let url = sharedFileURL {
+            ShareLink(item: url, preview: SharePreview(receipt.fileName)) {
+                Label("Save Receipt", systemImage: "square.and.arrow.up")
+            }
+        }
+        #endif
     }
 
     // MARK: Sections
